@@ -1,0 +1,145 @@
+---
+title: "linelistBayes: an introduction"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{linelistBayes: an introduction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+This R Markdown document walks through the steps of using Bayesian inference to create more realistic estimates of time-dependent reproductive number, $R(t)$ that can be helpful for surveillance and intervention planning of infectious diseases, like COVID-19.
+
+There are two ways to use `linelineBayes`: either you have **caseCount** data, which are aggregated case counts by day, or you have **Line-list data** means you have a single row for each case, that has dates for: infection, symptom onset, positive test, and when this was reported to public health agencies.
+
+### Example: Case Count data
+```{r setup}
+library(linelistBayes)
+```
+
+**Step 1.** Load data
+```{r example1}
+data("sample_dates")
+data("sample_location")
+data("sample_cases")
+
+head(sample_dates)
+head(sample_cases)
+head(sample_location)
+```
+
+**Step 2.** Creating case-counts
+```{r casecounts}
+caseCounts <- create_caseCounts(date_vec = sample_dates,
+                                location_vec = sample_location,
+                                cases_vec = sample_cases)
+head(caseCounts)
+```
+
+Plot
+```{r,dpi=100, fig.height=2.75, fig.width=6.75,dev='png'}
+plot(caseCounts)
+```
+
+Get the first wave only, just to speed processing
+```{r gethead,dpi=100, fig.height=2.75, fig.width=6.75,dev='png'}
+caseCounts <- caseCounts[1:80, ]
+plot(caseCounts)
+```
+
+**Step 3.** Define the serial interval.
+The `si()` function creates a vector of length 14 with alpha and beta as defined in Li and White, for COVID-19.
+```{r serial,dpi=100, fig.height=2.75, fig.width=6.75,dev='png'}
+sip <- si(14, 4.29, 1.18)
+plot(sip, type = 'l')
+```
+
+**Step 4.** Run the back-calculation algorithm. Metropolis-Hastings within Gibbs sampling is used.
+NB dispersion (also called 'size') is a measure of over-dispersion (smaller size means more over-dispersion, which means variance != mean). For more information see [Zeileis](https://edoc.unibas.ch/15400/).
+
+_NOTE:_ when you run `backnow` on case Count data, you assume internally some distribution of onset (and missingness). The code will run if some (but not all) onset data are present. If either all onset data are NA or none are NA, the code will not run (because you have all the information you would be simulating). This is the reason for the `reportF_missP = 0.6` argument. The implied onset distribution is `rnbinom()` with `size = 3` and `mu = 9`.
+
+```{r backcalc1, eval=FALSE}
+out_list_demo <- run_backnow(caseCounts, 
+                        MAX_ITER = as.integer(2000), 
+                        norm_sigma = 0.2,
+                        sip = sip,
+                        NB_maxdelay = as.integer(20),
+                        NB_size = as.integer(6),
+                        printProgress = 1,
+                        reportF_missP = 0.6)
+```
+
+**Plot outputs**.
+The points are aggregated reported cases, and the red line (and shaded confidence interval) represent the back-calculated case onsets that lead to the reported data.
+```{r fakeplot, eval=FALSE}
+plot(out_list_demo, "est")
+```
+
+```{r plot1, dpi=100, fig.height=2.75, fig.width=6.75,dev='png',echo=FALSE}
+data("out_list_demo")
+# plot
+oldpar <- par(mfrow = c(1,2))
+par(oma = c(0, 0, 0, 0), mar = c(4, 4, 1, 1))
+plot(out_list_demo, "est")
+par(oldpar)
+```
+
+You can also plot the `R(t)` curve over time. In this case, the red line (and shaded confidence interval) represent the time-varying r(t). See Li and White for description.
+```{r fakeplot2, eval=FALSE}
+plot(out_list_demo, "rt")
+```
+
+```{r plot2, dpi=100, fig.height=2.75, fig.width=6.75,dev='png',echo=FALSE}
+data("out_list_demo")
+# plot
+oldpar <- par(mfrow = c(1,2))
+par(oma = c(0, 0, 0, 0), mar = c(4, 4, 1, 1))
+plot(out_list_demo, "rt")
+par(oldpar)
+```
+
+### Example: lineList data
+Same result if you use with line_list data"
+```{r}
+data("sample_report_dates")
+data("sample_onset_dates")
+```
+
+create your `caseCounts_line` object
+```{r casecounts2}
+caseCounts_line <- create_linelist(report_dates = sample_report_dates,
+                                onset_dates = sample_onset_dates)
+head(caseCounts_line)
+```
+
+and run
+```{r backcalc2, eval=FALSE}
+out_list_demo <- run_backnow(caseCounts_line, 
+                        MAX_ITER = as.integer(2000), 
+                        norm_sigma = 0.2,
+                        sip = sip,
+                        NB_maxdelay = as.integer(20),
+                        NB_size = as.integer(6),
+                        printProgress = 1)
+```
+
+### Additional functionality
+
+#### Specifying the distribution for caseCounts_line
+
+You can specify the distribution for caseCounts_line in either `run_backnow` 
+or `convert_to_linelist` (this runs internally depending on the class of `input`). `reportF` is the distribution function, `_args` lists the distribution params that are not `x`, and `_missP` is the percent missing. This must be between ${0 < x < 1}$. Both 'caseCounts' and 'caseCounts_line' objects can be fed into `run_backnow`.
+```{r}
+my_linelist <- convert_to_linelist(caseCounts, 
+                                   reportF = rnbinom, 
+                                   reportF_args = list(size = 3, mu = 9),
+                                   reportF_missP = 0.6)
+head(my_linelist)
+```

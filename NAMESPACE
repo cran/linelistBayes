@@ -1,0 +1,13 @@
+
+useDynLib(linelistBayes, .registration=TRUE)
+importFrom(Rcpp, evalCpp)
+S3method(plot,backnow)
+S3method(plot,caseCounts)
+exportPattern("^[[:alpha:]]+")
+import(coda)
+import(dplyr)
+import(lubridate)
+import(magrittr)
+importFrom("graphics", "lines", "polygon", "text")
+importFrom("stats", "pgamma", "quantile", "rnbinom")
+importFrom("utils", "timestamp")
